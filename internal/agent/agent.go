@@ -1,46 +1,68 @@
 package agent
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 
-	"github.com/hashicorp/go-plugin"
-	"github.com/mwantia/nautilus/pkg/core"
-	"github.com/mwantia/nautilus/pkg/shared"
+	"github.com/mwantia/nautilus/internal/config"
+	"github.com/mwantia/nautilus/internal/handler"
+	"github.com/mwantia/nautilus/pkg/registry"
 )
 
 type NautilusAgent struct {
-	Mutex   sync.RWMutex
-	Clients map[string]*plugin.Client
-	Plugins map[string]shared.NautilusPipelineProcessor
-	Config  NautilusConfig
+	Mutex    sync.RWMutex
+	Registry *registry.PluginRegistry
+	Config   *config.NautilusConfig
 }
 
-func NewAgent() *NautilusAgent {
+func NewAgent(cfg *config.NautilusConfig) *NautilusAgent {
 	return &NautilusAgent{
-		Clients: make(map[string]*plugin.Client),
-		Plugins: make(map[string]shared.NautilusPipelineProcessor),
-		Config:  NautilusConfig{},
+		Registry: registry.NewRegistry(),
+		Config:   cfg,
 	}
 }
 
-func (agent *NautilusAgent) Serve() error {
-	if err := agent.NetworkPlugin("tcp", "127.0.0.1:12345"); err != nil {
-		log.Printf("Error loading plugin: %v", err)
+func (a *NautilusAgent) Serve() error {
+	if err := a.ServeLocalPlugins(); err != nil {
+		log.Printf("%v", err)
 	}
 
-	http.HandleFunc("/health", core.Health(agent.Plugins))
+	http.HandleFunc("/health", handler.HandleHealth(a.Registry))
+	http.HandleFunc("/plugin/list", handler.HandlListPlugins(a.Registry))
+	http.HandleFunc("/plugin/register", handler.HandleRegisterPlugin(a.Registry, a.Config))
 
-	log.Println("Serving HTTP to :8080")
-	return http.ListenAndServe(":8080", nil)
+	log.Printf("Serving HTTP to %s", a.Config.Agent.Address)
+	return http.ListenAndServe(a.Config.Agent.Address, nil)
 }
 
-func (agent *NautilusAgent) Cleanup() {
-	agent.Mutex.Lock()
-	defer agent.Mutex.Unlock()
+func (a *NautilusAgent) Cleanup() {
+	a.Mutex.Lock()
+	defer a.Mutex.Unlock()
 
-	for _, client := range agent.Clients {
-		client.Kill()
+	for _, plugin := range a.Registry.ListPlugins() {
+		if err := plugin.Cleanup(); err != nil {
+			log.Printf("Plugin cleanup error: %v", err)
+		}
 	}
+}
+
+func (a *NautilusAgent) ServeLocalPlugins() error {
+	files, err := os.ReadDir(a.Config.Agent.PluginDir)
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		if !file.IsDir() {
+			path := fmt.Sprintf("%s/%s", a.Config.Agent.PluginDir, file.Name())
+			if err := a.LocalPlugin(path); err != nil {
+				log.Printf("Unable to load local plugin !! '%s': %v", path, err)
+			}
+		}
+	}
+
+	return nil
 }

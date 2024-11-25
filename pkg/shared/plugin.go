@@ -8,23 +8,23 @@ var Handshake = plugin.HandshakeConfig{
 	MagicCookieValue: "pipeline",
 }
 
-type NautilusPipelineContext struct {
+type PipelineContextData struct {
 	ID          string
 	ContentType string
 	Data        []byte
 	Metadata    map[string]interface{}
 }
 
-type NautilusPipelineProcessor interface {
+type PipelineProcessor interface {
 	Name() (string, error)
 
-	Process(ctx *NautilusPipelineContext) (*NautilusPipelineContext, error)
+	Process(data *PipelineContextData) (*PipelineContextData, error)
 
-	Configure() error
+	Configure(cfg map[string]interface{}) error
 
 	Health() error
 }
 
 var Plugins = map[string]plugin.Plugin{
-	"pipeline": &NautilusPipelinePlugin{},
+	"pipeline": &PipelinePlugin{},
 }

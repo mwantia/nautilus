@@ -8,6 +8,7 @@ import (
 	"os/exec"
 
 	"github.com/hashicorp/go-plugin"
+	"github.com/mwantia/nautilus/pkg/registry"
 	"github.com/mwantia/nautilus/pkg/shared"
 )
 
@@ -17,16 +18,16 @@ func (agent *NautilusAgent) EmbbedPlugin(name string) error {
 		return nil
 	}
 
-	if err = agent.LocalPlugin(path, "plugin", "--name", name); err != nil {
-		return fmt.Errorf("unable to embbeded plugin '%s': %v", name, err)
+	if err = agent.LocalPlugin(path, "plugin", name); err != nil {
+		return fmt.Errorf("unable to load embbeded plugin '%s': %v", name, err)
 	}
 
 	return nil
 }
 
-func (agent *NautilusAgent) LocalPlugin(path string, arg ...string) error {
-	agent.Mutex.Lock()
-	defer agent.Mutex.Unlock()
+func (a *NautilusAgent) LocalPlugin(path string, arg ...string) error {
+	a.Mutex.Lock()
+	defer a.Mutex.Unlock()
 
 	client := plugin.NewClient(&plugin.ClientConfig{
 		HandshakeConfig: shared.Handshake,
@@ -46,48 +47,78 @@ func (agent *NautilusAgent) LocalPlugin(path string, arg ...string) error {
 		return err
 	}
 
-	plugin := raw.(shared.NautilusPipelineProcessor)
+	processor := raw.(shared.PipelineProcessor)
 
-	name, err := plugin.Name()
+	name, err := processor.Name()
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Loaded plugins named '%s'", name)
+	log.Printf("Loaded local plugin named '%s'", name)
 
-	if err := plugin.Configure(); err != nil {
+	info := &registry.PluginInfo{
+		Name:      name,
+		IsNetwork: false,
+		Processor: processor,
+		Cleanup: func() error {
+			client.Kill()
+			return nil
+		},
+	}
+	if err := a.Registry.Register(info); err != nil {
+		return err
+	}
+
+	cfg, err := a.Config.GetPluginConfigMap(name)
+	if err != nil {
+		log.Printf("Error loading plugin config: %v", err)
+	}
+
+	if err := processor.Configure(cfg); err != nil {
 		client.Kill()
 		return err
 	}
 
-	agent.Clients[name] = client
-	agent.Plugins[name] = plugin
-
 	return nil
 }
 
-func (agent *NautilusAgent) NetworkPlugin(network, address string) error {
-	agent.Mutex.Lock()
-	defer agent.Mutex.Unlock()
+func (a *NautilusAgent) NetworkPlugin(network, address string) error {
+	a.Mutex.Lock()
+	defer a.Mutex.Unlock()
 
 	rpc, err := rpc.Dial(network, address)
 	if err != nil {
 		return err
 	}
 
-	plugin := &shared.NautilusRPCClient{
+	processor := &shared.RpcClient{
 		Client: rpc,
 	}
-	name, err := plugin.Name()
+	name, err := processor.Name()
 	if err != nil {
 		return err
 	}
 
-	if err := plugin.Configure(); err != nil {
+	log.Printf("Loaded network plugin named '%s'", name)
+
+	info := &registry.PluginInfo{
+		Name:      name,
+		IsNetwork: false,
+		Processor: processor,
+		Cleanup:   rpc.Close,
+	}
+	if err := a.Registry.Register(info); err != nil {
 		return err
 	}
 
-	agent.Plugins[name] = plugin
+	cfg, err := a.Config.GetPluginConfigMap(name)
+	if err != nil {
+		log.Printf("Error loading plugin config: %v", err)
+	}
+
+	if err := processor.Configure(cfg); err != nil {
+		return err
+	}
 
 	return nil
 }

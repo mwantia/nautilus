@@ -7,19 +7,21 @@ WORKDIR /build
 ADD . /build
 
 RUN go get -d -v ./...
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o ./nautilus ./cmd/nautilus/main.go
+
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-s -w -extldflags "-static"' -o ./nautilus ./cmd/nautilus/main.go
+
+RUN chmod +x ./nautilus
 
 FROM alpine:3.20.3
 
 ARG TARGETOS
 ARG TARGETARCH
-# Install required packages
-RUN apk add --no-cache bash ca-certificates
-# Manually update the local certificates
-RUN update-ca-certificates
+# Install required packages and manually update the local certificates
+RUN apk add --no-cache bash ca-certificates && update-ca-certificates
 # Copy executable from build
 COPY --from=gobuild /build/nautilus /nautilus
-RUN chmod +x /nautilus
+# Expose port 8080 by default
+EXPOSE 8080
 # Set entrypoint to run executable
 ENTRYPOINT [ "/nautilus" ]
 CMD [ "agent" ]

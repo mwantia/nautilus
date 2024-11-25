@@ -4,11 +4,11 @@ import (
 	"net/rpc"
 )
 
-type NautilusRPCClient struct {
+type RpcClient struct {
 	Client *rpc.Client
 }
 
-func (c *NautilusRPCClient) Name() (string, error) {
+func (c *RpcClient) Name() (string, error) {
 	var resp string
 	if err := c.Client.Call("Plugin.Name", struct{}{}, &resp); err != nil {
 		return "", err
@@ -16,19 +16,19 @@ func (c *NautilusRPCClient) Name() (string, error) {
 	return resp, nil
 }
 
-func (c *NautilusRPCClient) Process(ctx *NautilusPipelineContext) (*NautilusPipelineContext, error) {
-	var resp NautilusPipelineContext
-	err := c.Client.Call("Plugin.Process", ctx, &resp)
+func (c *RpcClient) Process(data *PipelineContextData) (*PipelineContextData, error) {
+	var resp PipelineContextData
+	err := c.Client.Call("Plugin.Process", data, &resp)
 	return &resp, err
 }
 
-func (c *NautilusRPCClient) Configure() error {
+func (c *RpcClient) Configure(cfg map[string]interface{}) error {
 	var resp error
-	err := c.Client.Call("Plugin.Configure", struct{}{}, &resp)
+	err := c.Client.Call("Plugin.Configure", cfg, &resp)
 	return err
 }
 
-func (c *NautilusRPCClient) Health() error {
+func (c *RpcClient) Health() error {
 	var resp error
 	err := c.Client.Call("Plugin.Health", struct{}{}, &resp)
 	return err

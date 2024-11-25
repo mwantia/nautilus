@@ -1,10 +1,10 @@
-package core
+package handler
 
 import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/mwantia/nautilus/pkg/shared"
+	"github.com/mwantia/nautilus/pkg/registry"
 )
 
 type HealthResult struct {
@@ -18,20 +18,20 @@ type HealthPluginResult struct {
 	Error  string `json:"error,omitempty"`
 }
 
-func Health(plugins map[string]shared.NautilusPipelineProcessor) http.HandlerFunc {
+func HandleHealth(reg *registry.PluginRegistry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		result := HealthResult{
 			Status: "OK",
 		}
 		healthy := true
 
-		for name, plugin := range plugins {
+		for _, plugin := range reg.ListPlugins() {
 			sr := HealthPluginResult{
-				Name:   name,
+				Name:   plugin.Name,
 				Status: "OK",
 			}
 
-			if err := plugin.Health(); err != nil {
+			if err := plugin.Processor.Health(); err != nil {
 				sr.Status = "ERROR"
 				sr.Error = err.Error()
 				healthy = false
@@ -49,6 +49,7 @@ func Health(plugins map[string]shared.NautilusPipelineProcessor) http.HandlerFun
 
 		encoder := json.NewEncoder(w)
 		encoder.SetIndent("", "    ")
+
 		if err := encoder.Encode(result); err != nil {
 			encoder.Encode(map[string]string{
 				"error": err.Error(),
