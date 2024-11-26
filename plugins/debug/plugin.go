@@ -3,7 +3,7 @@ package debug
 import (
 	"log"
 
-	"github.com/mwantia/nautilus/pkg/shared"
+	"github.com/mwantia/nautilus/pkg/plugin"
 )
 
 type DebugProcessor struct {
@@ -17,9 +17,12 @@ func (p *DebugProcessor) Name() (string, error) {
 	return "debug", nil
 }
 
-func (p *DebugProcessor) Process(ctx *shared.PipelineContextData) (*shared.PipelineContextData, error) {
-	log.Println("Processing debug plugin...")
-	return ctx, nil
+func (p *DebugProcessor) GetCapabilities() (plugin.PipelineProcessorCapability, error) {
+	return plugin.PipelineProcessorCapability{
+		Types: []plugin.PipelineProcessorCapabilityType{
+			plugin.None,
+		},
+	}, nil
 }
 
 func (p *DebugProcessor) Configure(cfg map[string]interface{}) error {
@@ -29,6 +32,11 @@ func (p *DebugProcessor) Configure(cfg map[string]interface{}) error {
 
 	log.Println("Configuring debug plugin...")
 	return nil
+}
+
+func (p *DebugProcessor) Process(data *plugin.PipelineContextData) (*plugin.PipelineContextData, error) {
+	log.Println("Processing debug plugin...")
+	return data, nil
 }
 
 func (p *DebugProcessor) Health() error {

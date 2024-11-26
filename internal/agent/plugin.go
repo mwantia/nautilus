@@ -2,23 +2,23 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"net/rpc"
 	"os"
 	"os/exec"
 
-	"github.com/hashicorp/go-plugin"
+	goplugin "github.com/hashicorp/go-plugin"
+	"github.com/mwantia/nautilus/pkg/log"
+	"github.com/mwantia/nautilus/pkg/plugin"
 	"github.com/mwantia/nautilus/pkg/registry"
-	"github.com/mwantia/nautilus/pkg/shared"
 )
 
-func (agent *NautilusAgent) EmbbedPlugin(name string) error {
+func (a *NautilusAgent) EmbbedPlugin(name string) error {
 	path, err := os.Executable()
 	if err != nil {
 		return nil
 	}
 
-	if err = agent.LocalPlugin(path, "plugin", name); err != nil {
+	if err = a.LocalPlugin(path, "plugin", name); err != nil {
 		return fmt.Errorf("unable to load embbeded plugin '%s': %v", name, err)
 	}
 
@@ -29,10 +29,11 @@ func (a *NautilusAgent) LocalPlugin(path string, arg ...string) error {
 	a.Mutex.Lock()
 	defer a.Mutex.Unlock()
 
-	client := plugin.NewClient(&plugin.ClientConfig{
-		HandshakeConfig: shared.Handshake,
-		Plugins:         shared.Plugins,
+	client := goplugin.NewClient(&goplugin.ClientConfig{
+		HandshakeConfig: plugin.Handshake,
+		Plugins:         plugin.Plugins,
 		Cmd:             exec.Command(path, arg...),
+		Logger:          log.Default,
 	})
 
 	rpc, err := client.Client()
@@ -47,19 +48,26 @@ func (a *NautilusAgent) LocalPlugin(path string, arg ...string) error {
 		return err
 	}
 
-	processor := raw.(shared.PipelineProcessor)
+	processor := raw.(plugin.PipelineProcessor)
 
 	name, err := processor.Name()
 	if err != nil {
 		return err
 	}
 
-	log.Printf("Loaded local plugin named '%s'", name)
+	cap, err := processor.GetCapabilities()
+	if err != nil {
+		return err
+	}
+
+	a.Logger.Info("Loaded local plugin", "name", name)
 
 	info := &registry.PluginInfo{
-		Name:      name,
-		IsNetwork: false,
-		Processor: processor,
+		Name:         name,
+		IsNetwork:    false,
+		Processor:    processor,
+		Capabilities: cap,
+
 		Cleanup: func() error {
 			client.Kill()
 			return nil
@@ -71,7 +79,7 @@ func (a *NautilusAgent) LocalPlugin(path string, arg ...string) error {
 
 	cfg, err := a.Config.GetPluginConfigMap(name)
 	if err != nil {
-		log.Printf("Error loading plugin config: %v", err)
+		a.Logger.Warn("Unable to load plugin config", "name", name, "error", err)
 	}
 
 	if err := processor.Configure(cfg); err != nil {
@@ -91,7 +99,7 @@ func (a *NautilusAgent) NetworkPlugin(network, address string) error {
 		return err
 	}
 
-	processor := &shared.RpcClient{
+	processor := &plugin.RpcClient{
 		Client: rpc,
 	}
 	name, err := processor.Name()
@@ -99,13 +107,19 @@ func (a *NautilusAgent) NetworkPlugin(network, address string) error {
 		return err
 	}
 
-	log.Printf("Loaded network plugin named '%s'", name)
+	cap, err := processor.GetCapabilities()
+	if err != nil {
+		return err
+	}
+
+	a.Logger.Info("Loaded network plugin", "name", name)
 
 	info := &registry.PluginInfo{
-		Name:      name,
-		IsNetwork: false,
-		Processor: processor,
-		Cleanup:   rpc.Close,
+		Name:         name,
+		IsNetwork:    false,
+		Processor:    processor,
+		Capabilities: cap,
+		Cleanup:      rpc.Close,
 	}
 	if err := a.Registry.Register(info); err != nil {
 		return err
@@ -113,7 +127,7 @@ func (a *NautilusAgent) NetworkPlugin(network, address string) error {
 
 	cfg, err := a.Config.GetPluginConfigMap(name)
 	if err != nil {
-		log.Printf("Error loading plugin config: %v", err)
+		a.Logger.Warn("Unable to load plugin config", "name", name, "error", err)
 	}
 
 	if err := processor.Configure(cfg); err != nil {

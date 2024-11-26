@@ -1,19 +1,23 @@
 package agent
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
+	"time"
 
 	"github.com/mwantia/nautilus/internal/config"
-	"github.com/mwantia/nautilus/internal/handler"
+	"github.com/mwantia/nautilus/pkg/log"
 	"github.com/mwantia/nautilus/pkg/registry"
 )
 
 type NautilusAgent struct {
 	Mutex    sync.RWMutex
+	Logger   *log.Logger
 	Registry *registry.PluginRegistry
 	Config   *config.NautilusConfig
 }
@@ -21,32 +25,68 @@ type NautilusAgent struct {
 func NewAgent(cfg *config.NautilusConfig) *NautilusAgent {
 	return &NautilusAgent{
 		Registry: registry.NewRegistry(),
+		Logger:   log.NewLogger("agent"),
 		Config:   cfg,
 	}
 }
 
-func (a *NautilusAgent) Serve() error {
+func (a *NautilusAgent) Serve(ctx context.Context) error {
 	if err := a.ServeLocalPlugins(); err != nil {
-		log.Printf("%v", err)
+		a.Logger.Warn("Unable to serve local plugin", "error", err)
 	}
 
-	http.HandleFunc("/health", handler.HandleHealth(a.Registry))
-	http.HandleFunc("/plugin/list", handler.HandlListPlugins(a.Registry))
-	http.HandleFunc("/plugin/register", handler.HandleRegisterPlugin(a.Registry, a.Config))
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
+	defer cancel()
 
-	log.Printf("Serving HTTP to %s", a.Config.Agent.Address)
-	return http.ListenAndServe(a.Config.Agent.Address, nil)
+	srv, err := SetupServer(a)
+	if err != nil {
+		return err
+	}
+
+	go a.Registry.Watch(ctx)
+
+	go func() {
+		a.Logger.Info("Serving HTTP server", "address", a.Config.Agent.Address)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			a.Logger.Error("Error serving http server", "address", a.Config.Agent.Address, "error", err)
+		}
+	}()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		<-ctx.Done()
+
+		a.Logger.Info("Shutting down agent...")
+
+		shutdown := context.Background()
+		shutdown, cncl := context.WithTimeout(shutdown, 10*time.Second)
+		defer cncl()
+
+		if err := srv.Shutdown(shutdown); err != nil {
+			a.Logger.Error("Error shutting down http server", "error", err)
+		}
+	}()
+
+	wg.Wait()
+	return a.Cleanup()
 }
 
-func (a *NautilusAgent) Cleanup() {
+func (a *NautilusAgent) Cleanup() error {
 	a.Mutex.Lock()
 	defer a.Mutex.Unlock()
 
+	var err error
+
 	for _, plugin := range a.Registry.ListPlugins() {
-		if err := plugin.Cleanup(); err != nil {
-			log.Printf("Plugin cleanup error: %v", err)
+		if cleanupErr := plugin.Cleanup(); cleanupErr != nil {
+			err = errors.Join(err, cleanupErr)
 		}
 	}
+
+	return err
 }
 
 func (a *NautilusAgent) ServeLocalPlugins() error {
@@ -59,7 +99,7 @@ func (a *NautilusAgent) ServeLocalPlugins() error {
 		if !file.IsDir() {
 			path := fmt.Sprintf("%s/%s", a.Config.Agent.PluginDir, file.Name())
 			if err := a.LocalPlugin(path); err != nil {
-				log.Printf("Unable to load local plugin !! '%s': %v", path, err)
+				a.Logger.Warn("Unable to load local plugin", "path", path, "error", err)
 			}
 		}
 	}

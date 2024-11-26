@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -8,6 +9,33 @@ import (
 func NewRegistry() *PluginRegistry {
 	return &PluginRegistry{
 		Plugins: make(map[string]*PluginInfo),
+	}
+}
+
+func (reg *PluginRegistry) Watch(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		plugins := reg.ListPlugins()
+		for _, plugin := range plugins {
+			if err := plugin.Processor.Health(); err != nil {
+				plugin.IsHealthy = false
+				plugin.LastKnownError = err
+
+				continue
+			}
+
+			plugin.IsHealthy = true
+			plugin.LastKnownError = nil
+			plugin.LastSeen = time.Now()
+		}
+
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 

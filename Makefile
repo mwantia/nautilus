@@ -6,7 +6,10 @@ BUILD_NAME := nautilus
 
 .PHONY: build test docker-setup docker-release docker-cleanup
 
-build:
+init:
+	go mod tidy ;
+
+build: init
 	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-s -w -extldflags "-static"' -o build/$(BUILD_NAME) ./cmd/nautilus/main.go ;
 
 test: build

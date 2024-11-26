@@ -1,6 +1,8 @@
-package shared
+package plugin
 
-import "github.com/hashicorp/go-plugin"
+import (
+	"github.com/hashicorp/go-plugin"
+)
 
 var Handshake = plugin.HandshakeConfig{
 	ProtocolVersion:  1,
@@ -18,9 +20,11 @@ type PipelineContextData struct {
 type PipelineProcessor interface {
 	Name() (string, error)
 
-	Process(data *PipelineContextData) (*PipelineContextData, error)
+	GetCapabilities() (PipelineProcessorCapability, error)
 
 	Configure(cfg map[string]interface{}) error
+
+	Process(data *PipelineContextData) (*PipelineContextData, error)
 
 	Health() error
 }

@@ -1,10 +1,16 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func (c *NautilusConfig) Validate() error {
 	if c.Agent == nil {
 		return fmt.Errorf("agent configuration block is required")
+	}
+	if strings.TrimSpace(c.LogLevel) == "" {
+		c.LogLevel = "INFO"
 	}
 
 	if err := c.Agent.Validate(); err != nil {

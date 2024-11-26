@@ -3,8 +3,9 @@ package config
 import "github.com/hashicorp/hcl/v2"
 
 type NautilusConfig struct {
-	Agent   *AgentConfig    `hcl:"agent,block"`
-	Plugins []*PluginConfig `hcl:"plugin,block"`
+	Agent    *AgentConfig    `hcl:"agent,block"`
+	Plugins  []*PluginConfig `hcl:"plugin,block"`
+	LogLevel string          `hcl:"log_level,optional"`
 }
 
 type AgentConfig struct {

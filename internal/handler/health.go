@@ -31,10 +31,13 @@ func HandleHealth(reg *registry.PluginRegistry) http.HandlerFunc {
 				Status: "OK",
 			}
 
-			if err := plugin.Processor.Health(); err != nil {
+			if !plugin.IsHealthy {
 				sr.Status = "ERROR"
-				sr.Error = err.Error()
 				healthy = false
+
+				if plugin.LastKnownError != nil {
+					sr.Error = plugin.LastKnownError.Error()
+				}
 			}
 
 			result.Plugins = append(result.Plugins, sr)

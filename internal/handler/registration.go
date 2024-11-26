@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/mwantia/nautilus/internal/config"
+	"github.com/mwantia/nautilus/pkg/plugin"
 	"github.com/mwantia/nautilus/pkg/registry"
-	"github.com/mwantia/nautilus/pkg/shared"
 )
 
 type RegisterPluginRequest struct {
@@ -69,7 +69,7 @@ func HandleRegisterPlugin(reg *registry.PluginRegistry, cfg *config.NautilusConf
 			return
 		}
 
-		processor := &shared.RpcClient{
+		processor := &plugin.RpcClient{
 			Client: client,
 		}
 		name, err := processor.Name()
@@ -93,12 +93,24 @@ func HandleRegisterPlugin(reg *registry.PluginRegistry, cfg *config.NautilusConf
 			return
 		}
 
+		cap, err := processor.GetCapabilities()
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			encoder.Encode(map[string]string{
+				"error": fmt.Sprintf("Unable to get capabilities for plugin '%s': %v", name, err),
+			})
+
+			client.Close() // Try to close any connections
+			return
+		}
+
 		info := &registry.PluginInfo{
-			Name:      request.Name,
-			IsNetwork: true,
-			Address:   request.Address,
-			Processor: processor,
-			Cleanup:   client.Close,
+			Name:         name,
+			IsNetwork:    true,
+			Address:      request.Address,
+			Processor:    processor,
+			Capabilities: cap,
+			Cleanup:      client.Close,
 		}
 		if err := reg.Register(info); err != nil {
 			w.WriteHeader(http.StatusBadRequest)

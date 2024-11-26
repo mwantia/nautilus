@@ -1,21 +1,27 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"io"
+	olog "log"
 	"os"
 	"strings"
 
 	"github.com/mwantia/nautilus/internal/agent"
 	"github.com/mwantia/nautilus/internal/config"
-	"github.com/mwantia/nautilus/pkg/shared"
+	"github.com/mwantia/nautilus/pkg/log"
+	"github.com/mwantia/nautilus/pkg/plugin"
 	"github.com/mwantia/nautilus/plugins/debug"
 	"github.com/spf13/cobra"
 )
 
 var (
-	Config string
+	Config  string
+	NoColor bool
+
 	Cfg    *config.NautilusConfig
+	Logger *log.Logger
 
 	Root = &cobra.Command{
 		Use:               "nautilus",
@@ -45,14 +51,25 @@ func SetupConfig(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unable to validate config: %v", err)
 	}
 
-	log.Printf("%v", cfg.Agent.Address)
+	if err := log.Setup(cfg.LogLevel, NoColor); err != nil {
+		return fmt.Errorf("unable to parse log-level: %v", err)
+	}
 
+	olog.SetOutput(io.Discard)
+
+	Logger = log.NewLogger("main")
 	Cfg = cfg
+
+	Logger.Debug("configuration loaded")
+
 	return nil
 }
 
 func RunServeAgent(cmd *cobra.Command, args []string) error {
-	return agent.NewAgent(Cfg).Serve()
+	ctx := context.Background()
+	a := agent.NewAgent(Cfg)
+
+	return a.Serve(ctx)
 }
 
 func RunServePlugin(cmd *cobra.Command, args []string) error {
@@ -66,10 +83,10 @@ func RunServePlugin(cmd *cobra.Command, args []string) error {
 	case "debug":
 		impl := debug.NewImpl()
 		if strings.TrimSpace(address) != "" {
-			return shared.RegisterPipelineProcessor(impl, address)
+			return plugin.RegisterPipelineProcessor(impl, address)
 		}
 
-		return shared.ServePipelineProcessor(impl)
+		return plugin.ServePipelineProcessor(impl)
 	}
 
 	return fmt.Errorf("unknown plugin: %s", args[0])
@@ -77,11 +94,14 @@ func RunServePlugin(cmd *cobra.Command, args []string) error {
 
 func main() {
 	Root.PersistentFlags().StringVar(&Config, "config", "", "Defines the configuration path used by this application")
+	Root.PersistentFlags().BoolVar(&NoColor, "no-color", false, "Disables colored command output")
+
 	Plugin.Flags().String("address", "", "If defined, registers the plugin in network mode and tries to connect to the external agent via 'address'.")
 
 	Root.AddCommand(Agent, Plugin)
 
 	if err := Root.Execute(); err != nil {
+		Logger.Error("Failed to execute command", "error", err)
 		fmt.Println(err)
 		os.Exit(1)
 	}

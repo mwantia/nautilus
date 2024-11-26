@@ -1,4 +1,4 @@
-package shared
+package plugin
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/hashicorp/go-plugin"
+	goplugin "github.com/hashicorp/go-plugin"
 )
 
 type ServeRegistrationServer struct {
@@ -114,9 +114,9 @@ func (s *ServeRegistrationServer) WaitForShutdown() error {
 }
 
 func ServePipelineProcessor(impl PipelineProcessor) error {
-	plugin.Serve(&plugin.ServeConfig{
+	goplugin.Serve(&goplugin.ServeConfig{
 		HandshakeConfig: Handshake,
-		Plugins: map[string]plugin.Plugin{
+		Plugins: map[string]goplugin.Plugin{
 			"pipeline": &PipelinePlugin{
 				Impl: impl,
 			},
@@ -151,7 +151,7 @@ func RegisterPipelineProcessor(impl PipelineProcessor, address string) error {
 	}
 
 	buf := bytes.NewBuffer(data)
-	url := fmt.Sprintf("%s/plugin/register", address)
+	url := fmt.Sprintf("%s/v1/plugin/register", address)
 
 	resp, err := http.Post(url, "application/json", buf)
 	if err != nil {

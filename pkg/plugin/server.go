@@ -1,4 +1,4 @@
-package shared
+package plugin
 
 type RpcServer struct {
 	Impl PipelineProcessor
@@ -14,6 +14,20 @@ func (s *RpcServer) Name(_ struct{}, resp *string) error {
 	return nil
 }
 
+func (s *RpcServer) GetCapabilities(_ struct{}, resp *PipelineProcessorCapability) error {
+	result, err := s.Impl.GetCapabilities()
+	if err != nil {
+		return err
+	}
+
+	*resp = result
+	return nil
+}
+
+func (s *RpcServer) Configure(cfg map[string]interface{}, resp *error) error {
+	return s.Impl.Configure(cfg)
+}
+
 func (s *RpcServer) Process(args *PipelineContextData, resp *PipelineContextData) error {
 	result, err := s.Impl.Process(args)
 	if err != nil {
@@ -22,10 +36,6 @@ func (s *RpcServer) Process(args *PipelineContextData, resp *PipelineContextData
 
 	*resp = *result
 	return nil
-}
-
-func (s *RpcServer) Configure(cfg map[string]interface{}, resp *error) error {
-	return s.Impl.Configure(cfg)
 }
 
 func (s *RpcServer) Health(_ struct{}, resp *error) error {
